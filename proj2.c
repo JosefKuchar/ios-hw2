@@ -13,10 +13,11 @@
 // All semaphores
 typedef enum {
     SEM_MUTEX,            // General mutex
-    SEM_OXYGEN_QUEUE,     // Oxygen queue
-    SEM_HYDROGEN_QUEUE,   // Hydrogen queue
     SEM_LOG_MUTEX,        // Log mutex
     SEM_TURNSTILE_MUTEX,  // Turnstile mutex (for barrier)
+    SEM_MOLECULE_MUTEX,   // Mutex for writing molecule counts
+    SEM_OXYGEN_QUEUE,     // Oxygen queue
+    SEM_HYDROGEN_QUEUE,   // Hydrogen queue
     SEM_TURNSTILE,        // First turnstile (for barrier)
     SEM_TURNSTILE2,       // Second turnstile (for barrier)
     SEM_COUNT             // NOT FOR REAL USE! Just a count of all semaphores
@@ -69,9 +70,9 @@ void wait_rand(uint32_t millis) {
 bool init_semaphores() {
     // Initial semaphore values
     unsigned int values[] = {
-        [SEM_OXYGEN_QUEUE] = 0,   [SEM_HYDROGEN_QUEUE] = 0, [SEM_TURNSTILE] = 0,
-        [SEM_TURNSTILE2] = 1,     [SEM_MUTEX] = 1,          [SEM_LOG_MUTEX] = 1,
-        [SEM_TURNSTILE_MUTEX] = 1};
+        [SEM_OXYGEN_QUEUE] = 0,    [SEM_HYDROGEN_QUEUE] = 0, [SEM_TURNSTILE] = 0,
+        [SEM_TURNSTILE2] = 1,      [SEM_MUTEX] = 1,          [SEM_LOG_MUTEX] = 1,
+        [SEM_TURNSTILE_MUTEX] = 1, [SEM_MOLECULE_MUTEX] = 1};
 
     for (int i = 0; i < SEM_COUNT; i++) {
         if (sem_init(&shared->semaphores[i], 1, values[i])) {
@@ -260,13 +261,20 @@ void oxygen_process(uint32_t id, arguments_t args) {
         exit(0);
     }
 
+    // Update counts
+    sem_wait(&shared->semaphores[SEM_MOLECULE_MUTEX]);
+    shared->molecule_count++;
+    shared->oxygen_processed++;
+    sem_post(&shared->semaphores[SEM_MOLECULE_MUTEX]);
+
+    // Synchronize
+    barrier();
+
     // Init molecule creation
-    flog("O %d: creating molecule %d\n", id, shared->molecule_count + 1);
+    flog("O %d: creating molecule %d\n", id, shared->molecule_count);
 
     // Create molecule (by waiting)
     wait_rand(args.tb);
-    shared->molecule_count++;
-    shared->oxygen_processed++;
 
     // Synchronize
     barrier();
@@ -281,6 +289,9 @@ void oxygen_process(uint32_t id, arguments_t args) {
         shared->not_enough = true;
         sem_post(&shared->semaphores[SEM_HYDROGEN_QUEUE]);
     }
+
+    // Synchronize
+    barrier();
 
     // Finish
     sem_post(&shared->semaphores[SEM_MUTEX]);
@@ -329,13 +340,23 @@ void hydrogen_process(uint32_t id, arguments_t args) {
         exit(0);
     }
 
-    // Init molecule creation
-    flog("H %d: creating molecule %d\n", id, shared->molecule_count + 1);
+    // Update counts
+    sem_wait(&shared->semaphores[SEM_MOLECULE_MUTEX]);
     shared->hydrogen_processed++;
+    sem_post(&shared->semaphores[SEM_MOLECULE_MUTEX]);
+
+    // Synchronize
+    barrier();
+
+    // Init molecule creation
+    flog("H %d: creating molecule %d\n", id, shared->molecule_count);
 
     // Synchronize
     barrier();
     flog("H %d: molecule %d created\n", id, shared->molecule_count);
+
+    // Synchronize
+    barrier();
 
     // Finish
     close_log();
