@@ -256,6 +256,7 @@ void oxygen_process(uint32_t id, arguments_t args) {
         sem_post(&shared->semaphores[SEM_MUTEX]);
         sem_post(&shared->semaphores[SEM_OXYGEN_QUEUE]);
         sem_post(&shared->semaphores[SEM_HYDROGEN_QUEUE]);
+        close_log();
         exit(0);
     }
 
@@ -283,6 +284,7 @@ void oxygen_process(uint32_t id, arguments_t args) {
 
     // Finish
     sem_post(&shared->semaphores[SEM_MUTEX]);
+    close_log();
     exit(0);
 }
 
@@ -323,6 +325,7 @@ void hydrogen_process(uint32_t id, arguments_t args) {
         flog("H %d: not enough O or H\n", id);
         sem_post(&shared->semaphores[SEM_OXYGEN_QUEUE]);
         sem_post(&shared->semaphores[SEM_HYDROGEN_QUEUE]);
+        close_log();
         exit(0);
     }
 
@@ -335,6 +338,7 @@ void hydrogen_process(uint32_t id, arguments_t args) {
     flog("H %d: molecule %d created\n", id, shared->molecule_count);
 
     // Finish
+    close_log();
     exit(0);
 }
 
@@ -389,6 +393,7 @@ int main(int argc, char* argv[]) {
     for (unsigned long i = 0; i < args.no; i++) {
         pid_t pid = fork();
         if (pid == 0) {
+            free(pids);  // Cleanup in child
             oxygen_process(i + 1, args);
             return 0;
         } else if (pid == -1) {
@@ -403,6 +408,7 @@ int main(int argc, char* argv[]) {
     for (unsigned long i = 0; i < args.nh; i++) {
         pid_t pid = fork();
         if (pid == 0) {
+            free(pids);  // Cleanup in child
             hydrogen_process(i + 1, args);
             return 0;
         } else if (pid == -1) {
