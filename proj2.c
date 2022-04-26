@@ -419,6 +419,7 @@ int main(int argc, char* argv[]) {
     }
 
     // Cleanup
+    free(pids);
     close_log();
     destroy_semaphores();
     destroy_shared();
