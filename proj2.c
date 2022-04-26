@@ -97,10 +97,18 @@ void destroy_semaphores() {
     }
 }
 
+/**
+ * Detach from shared memory
+ */
 void detach_shared() {
     shmdt(shared);
 }
 
+/**
+ * Initialize shared memory
+ *
+ * @return true if successful, false otherwise
+ */
 bool init_shared() {
     shmid = shmget(IPC_PRIVATE, sizeof(struct s_shared), IPC_CREAT | 0666);
     if (shmid == -1) {
@@ -126,19 +134,33 @@ bool init_shared() {
     return true;
 }
 
+/**
+ * Destroy shared memory
+ */
 void destroy_shared() {
     shmctl(shmid, IPC_RMID, NULL);
 }
 
+/**
+ * Open log file
+ *
+ * @return true if successful, false otherwise
+ */
 bool open_log() {
     shared->log_stream = fopen("proj2.out", "w");
     return shared->log_stream != NULL;
 }
 
+/**
+ * Close log file
+ */
 void close_log() {
     fclose(shared->log_stream);
 }
 
+/**
+ * Logging function (fprintf wrapper) - thread/process safe
+ */
 void flog(const char* fmt, ...) {
     sem_wait(&shared->semaphores[SEM_LOG_MUTEX]);
 
@@ -174,6 +196,12 @@ unsigned long parse_argument(char* str, size_t min, size_t max) {
     return number;
 }
 
+/**
+ * @brief Oxygen child process
+ *
+ * @param id Oxygen process id
+ * @param args Parsed command line arguments
+ */
 void oxygen_process(uint32_t id, arguments_t args) {
     srand(time(NULL) + id * 100 + getpid());
     flog("O %d: started\n", id);
@@ -240,6 +268,12 @@ void oxygen_process(uint32_t id, arguments_t args) {
     exit(0);
 }
 
+/**
+ * @brief Hydrogen child process
+ *
+ * @param id Oxygen process id
+ * @param args Parsed command line arguments
+ */
 void hydrogen_process(uint32_t id, arguments_t args) {
     srand(time(NULL) + id * 100 + getpid());
 
@@ -248,8 +282,6 @@ void hydrogen_process(uint32_t id, arguments_t args) {
     flog("H %d: going to queue\n", id);
 
     sem_wait(&shared->semaphores[SEM_MUTEX]);
-
-    // printf("%d H: %d\n", id, shared->hydrogen_processed);
 
     shared->hydrogen_count++;
 
@@ -289,12 +321,21 @@ void hydrogen_process(uint32_t id, arguments_t args) {
     exit(0);
 }
 
+/**
+ * Main parent process
+ */
 int main(int argc, char* argv[]) {
     // Check number of arguments
     if (argc != 5) {
         fprintf(stderr, "Invalid number of arguments!\n");
         return 1;
     }
+
+    // Parse arguments
+    arguments_t args = {.no = parse_argument(argv[1], 1, LONG_MAX),
+                        .nh = parse_argument(argv[2], 1, LONG_MAX),
+                        .ti = parse_argument(argv[3], 0, 1000),
+                        .tb = parse_argument(argv[4], 0, 1000)};
 
     // Initialize
     if (!init_shared()) {
@@ -310,19 +351,14 @@ int main(int argc, char* argv[]) {
         goto sem_error;
     }
 
+    // Counter of spawned processes
     unsigned long spawned = 0;
-
-    // Parse arguments
-    arguments_t args = {.no = parse_argument(argv[1], 1, LONG_MAX),
-                        .nh = parse_argument(argv[2], 1, LONG_MAX),
-                        .ti = parse_argument(argv[3], 0, 1000),
-                        .tb = parse_argument(argv[4], 0, 1000)};
 
     // Children pid array
     pid_t* pids = malloc(sizeof(pid_t) * (args.no + args.nh));
     if (pids == NULL) {
         fprintf(stderr, "Malloc error\n");
-        return 1;
+        goto malloc_error;
     }
 
     // Check if at least one molecule can be created
@@ -383,6 +419,7 @@ fork_error:
     free(pids);
 
     // Cleanup
+malloc_error:
 sem_error:
     destroy_semaphores();
 log_error:
